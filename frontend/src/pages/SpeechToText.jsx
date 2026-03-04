@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 import axios from 'axios';
 import API from '../utils/api';
@@ -34,6 +34,9 @@ const SpeechToText = ({ onProcessSpeech, meetings = [], onStartMeeting, onStopMe
   const [transcript, setTranscript] = useState('');
   const [language, setLanguage] = useState('en');
   const [showDownloadDropdown, setShowDownloadDropdown] = useState(false);
+  const [speechError, setSpeechError] = useState('');
+  const [micPermissionState, setMicPermissionState] = useState('unknown');
+  const [isRequestingMic, setIsRequestingMic] = useState(false);
   
   // Meeting Information States
   const [meetingTitle, setMeetingTitle] = useState('');
@@ -59,6 +62,7 @@ const SpeechToText = ({ onProcessSpeech, meetings = [], onStartMeeting, onStopMe
 
   const committedTranscriptRef = useRef('');
   const dropdownRef = useRef(null);
+  const restartAttemptsRef = useRef(0);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -81,6 +85,28 @@ const SpeechToText = ({ onProcessSpeech, meetings = [], onStartMeeting, onStopMe
     }
     return () => clearInterval(interval);
   }, [meetingStatus]);
+
+  useEffect(() => {
+    let permissionStatus;
+
+    const setupPermissions = async () => {
+      if (!navigator?.permissions?.query) return;
+      try {
+        permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+        setMicPermissionState(permissionStatus.state);
+        permissionStatus.onchange = () => setMicPermissionState(permissionStatus.state);
+      } catch (_) {
+      }
+    };
+
+    setupPermissions();
+
+    return () => {
+      if (permissionStatus) {
+        permissionStatus.onchange = null;
+      }
+    };
+  }, []);
 
   // Sync committedTranscriptRef when transcript is cleared manually
   useEffect(() => {
@@ -124,7 +150,108 @@ const SpeechToText = ({ onProcessSpeech, meetings = [], onStartMeeting, onStopMe
     }
   }, [finalTranscript, interimTranscript, language, resetLiveTranscript]);
 
-  const startMeeting = () => {
+  const requestMicrophoneAccess = useCallback(async () => {
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setSpeechError('Microphone access is not available in this browser.');
+      return false;
+    }
+
+    setIsRequestingMic(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop());
+      setMicPermissionState('granted');
+      setSpeechError('');
+      return true;
+    } catch (err) {
+      const errName = err?.name || '';
+      const message =
+        errName === 'NotAllowedError' || errName === 'SecurityError'
+          ? 'Microphone permission is blocked. Allow microphone access and try again.'
+          : errName === 'NotFoundError'
+            ? 'No microphone device found.'
+            : errName === 'NotReadableError'
+              ? 'Microphone is in use by another application.'
+              : 'Unable to access microphone. Please check your device settings.';
+
+      setMicPermissionState('denied');
+      setSpeechError(message);
+      return false;
+    } finally {
+      setIsRequestingMic(false);
+    }
+  }, []);
+
+  const startListening = useCallback(async () => {
+    const allowed = await requestMicrophoneAccess();
+    if (!allowed) return;
+
+    const langMap = { 'en': 'en-IN', 'ta': 'ta-IN' };
+    try {
+      SpeechRecognition.startListening({
+        continuous: true,
+        language: langMap[language] || 'en-US',
+        interimResults: true,
+      });
+    } catch (err) {
+      setSpeechError('Speech recognition failed to start. Please try again.');
+    }
+  }, [language, requestMicrophoneAccess]);
+
+  const stopListening = useCallback(() => {
+    restartAttemptsRef.current = 0;
+    SpeechRecognition.stopListening();
+  }, []);
+
+  useEffect(() => {
+    const recognition = SpeechRecognition.getRecognition?.();
+    if (!recognition) return;
+
+    const prevOnStart = recognition.onstart;
+    const prevOnError = recognition.onerror;
+    const prevOnEnd = recognition.onend;
+
+    recognition.onstart = (...args) => {
+      restartAttemptsRef.current = 0;
+      setSpeechError('');
+      if (typeof prevOnStart === 'function') prevOnStart(...args);
+    };
+
+    recognition.onerror = (event) => {
+      const error = event?.error || '';
+      const message =
+        error === 'not-allowed' || error === 'service-not-allowed'
+          ? 'Microphone permission is blocked. Allow microphone access and try again.'
+          : error === 'no-speech'
+            ? 'No speech detected. Please speak closer to the microphone.'
+            : error === 'audio-capture'
+              ? 'Microphone is not available.'
+              : error === 'network'
+                ? 'Speech recognition network error.'
+                : 'Speech recognition error.';
+
+      setSpeechError(message);
+      if (typeof prevOnError === 'function') prevOnError(event);
+    };
+
+    recognition.onend = (...args) => {
+      if (typeof prevOnEnd === 'function') prevOnEnd(...args);
+      if (meetingStatus !== 'recording') return;
+      if (restartAttemptsRef.current >= 3) return;
+      restartAttemptsRef.current += 1;
+      setTimeout(() => {
+        startListening();
+      }, 250);
+    };
+
+    return () => {
+      recognition.onstart = prevOnStart || null;
+      recognition.onerror = prevOnError || null;
+      recognition.onend = prevOnEnd || null;
+    };
+  }, [meetingStatus, startListening]);
+
+  const startMeeting = async () => {
     if (!projectName.trim()) {
       alert('Please enter a project name');
       return;
@@ -133,9 +260,16 @@ const SpeechToText = ({ onProcessSpeech, meetings = [], onStartMeeting, onStopMe
       alert('Please select a meeting type');
       return;
     }
+
+    const allowed = await requestMicrophoneAccess();
+    if (!allowed) {
+      alert('Microphone permission is required to start recording.');
+      return;
+    }
+
     setMeetingStatus('recording');
     setMeetingDuration(0);
-    startListening();
+    await startListening();
     
     if (onStartMeeting) {
       onStartMeeting({
@@ -202,19 +336,6 @@ const SpeechToText = ({ onProcessSpeech, meetings = [], onStartMeeting, onStopMe
     const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
     return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const startListening = () => {
-    const langMap = { 'en': 'en-IN', 'ta': 'ta-IN' };
-    SpeechRecognition.startListening({
-      continuous: true,
-      language: langMap[language] || 'en-US',
-      interimResults: true,
-    });
-  };
-
-  const stopListening = () => {
-    SpeechRecognition.stopListening();
   };
 
   const processTranscript = async (textToProcess) => {
@@ -567,8 +688,9 @@ const SpeechToText = ({ onProcessSpeech, meetings = [], onStartMeeting, onStopMe
           </div>
 
           <div className="flex gap-3">
-            <button onClick={startMeeting} className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2">
-              <Mic className="h-4 w-4" /> Start Recording
+            <button onClick={startMeeting} disabled={isRequestingMic} className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2">
+              {isRequestingMic ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+              Start Recording
             </button>
           </div>
         </div>
@@ -652,8 +774,20 @@ const SpeechToText = ({ onProcessSpeech, meetings = [], onStartMeeting, onStopMe
                     Live Listening...
                   </div>
                 )}
+                {micPermissionState !== 'granted' && (
+                  <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                    Mic: {micPermissionState}
+                  </span>
+                )}
               </div>
             </div>
+
+            {speechError && (
+              <div className="mt-2 flex items-center gap-2 text-red-700 text-sm font-medium bg-red-50 px-3 py-2 rounded-lg border border-red-100">
+                <MicOff className="h-4 w-4" />
+                <span>{speechError}</span>
+              </div>
+            )}
 
             <div className="relative">
               <textarea
