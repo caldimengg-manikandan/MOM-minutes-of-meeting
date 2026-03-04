@@ -49,7 +49,10 @@ const DepartmentMaster = () => {
   const [showAddDeptModal, setShowAddDeptModal] = useState(false);
   const [notification, setNotification] = useState({ show: false, message: '', type: '' });
 
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
+  const API_BASE_URL = envBaseUrl 
+    ? (envBaseUrl.endsWith('/api') ? envBaseUrl : `${envBaseUrl}/api`) 
+    : 'http://localhost:8000/api';
   const API_URL = `${API_BASE_URL}/departments`;
 
   const fixedColumnIds = ['id', 'name', 'head', 'employees', 'budget', 'location', 'status', 'email', 'created_at', 'updated_at'];

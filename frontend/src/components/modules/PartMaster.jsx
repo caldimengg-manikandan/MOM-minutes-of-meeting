@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Hash, Box, Tag, Filter, BarChart } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL;
+const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
+const API_BASE = envBaseUrl 
+  ? (envBaseUrl.endsWith('/api') ? envBaseUrl : `${envBaseUrl}/api`) 
+  : '/api';
 
 const PartMaster = () => {
   // 🔹 Start with empty array (data comes from DB)

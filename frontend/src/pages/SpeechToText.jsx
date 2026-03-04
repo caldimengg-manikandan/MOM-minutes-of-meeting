@@ -97,7 +97,7 @@ const SpeechToText = ({ onProcessSpeech, meetings = [], onStartMeeting, onStopMe
       
       if (language !== 'en') {
         // Translate Tamil to English
-        axios.post('/api/translate/', {
+        API.post('/translate/', {
           text: text,
           source_lang: language,
           target_lang: 'en',

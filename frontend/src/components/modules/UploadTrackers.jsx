@@ -8,7 +8,10 @@ import {
 import ExcelViewer from './ExcelViewer';
 import * as XLSX from 'xlsx';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = envBaseUrl 
+  ? (envBaseUrl.endsWith('/api') ? envBaseUrl : `${envBaseUrl}/api`) 
+  : '/api';
 
 
 const UploadTrackers = () => {

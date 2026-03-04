@@ -6,7 +6,10 @@ const statusColors = {
   Completed: "bg-green-100 text-green-800",
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL;
+const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
+const API_BASE = envBaseUrl 
+  ? (envBaseUrl.endsWith('/api') ? envBaseUrl : `${envBaseUrl}/api`) 
+  : '/api';
 
 const ProjectMaster = () => {
   // 🔹 remove hardcoded data, fetch from backend

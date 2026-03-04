@@ -1,7 +1,10 @@
 import axios from "axios";
 
 // Use environment variable if available, otherwise default to localhost
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = envBaseUrl 
+  ? (envBaseUrl.endsWith('/api') ? envBaseUrl : `${envBaseUrl}/api`) 
+  : "/api";
 const API_URL = `${API_BASE_URL}/mom`;
 
 // GET all MOMs

@@ -64,7 +64,10 @@ const ProjectMaster = () => {
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [notification, setNotification] = useState({ show: false, message: '', type: '' });
 
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
+  const API_BASE_URL = envBaseUrl 
+    ? (envBaseUrl.endsWith('/api') ? envBaseUrl : `${envBaseUrl}/api`) 
+    : 'http://localhost:8000/api';
   const API_URL = `${API_BASE_URL}/projects`;
 
   const fixedColumnIds = ['id', 'name', 'manager', 'status', 'budget', 'timeline', 'teamSize', 'created_at', 'updated_at'];

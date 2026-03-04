@@ -11,7 +11,10 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = envBaseUrl 
+  ? (envBaseUrl.endsWith('/api') ? envBaseUrl : `${envBaseUrl}/api`) 
+  : '/api';
 
 const ChartBuilder = ({ datasetId, columns }) => {
   const [xAxis, setXAxis] = useState("");
